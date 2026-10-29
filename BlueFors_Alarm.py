@@ -3,12 +3,14 @@
 ===========================================
 Program : BlueFors_Alarm_System/BlueFors_Alarm.py
 ===========================================
-Summary: Sends out an email when pulse tubes are off
-         or when the fridge's temperature is >= 50mK
+Summary: Sends out an email when pulse tubes are off,
+         when the fridge's temperature is >= 50mK,
+         or when the gas handling pressures are too high
+         (P4 >= 500 mBar or P4 - P3 >= 50 mBar)
 
          Launches program w/o GUI
 """
-__author__ = ["Sadman Ahmed Shanto","Evangelos Vlachos","Clark Miyamoto"]
+__author__ = ["Sadman Ahmed Shanto","Evangelos Vlachos","Clark Miyamoto","Brian Isakov"]
 
 import csv
 import logging
@@ -23,11 +25,16 @@ from Slack_Messenger import Slack_er
 logging.getLogger('qcodes.instrument.instrument').setLevel(logging.ERROR)
 
 class BlueForsAlarm:
-    def __init__(self, folder_path, mc_channel_id=6, temp_threshold=0.05, wait_time=60):
+    def __init__(self, folder_path, mc_channel_id=6, temp_threshold=0.05, wait_time=60,
+                 channel_p3=3, channel_p4=4, p4_threshold=500.0, p4_p3_diff_threshold=50.0):
         self.folder_path = folder_path
         self.mc_channel_id = mc_channel_id
         self.temp_threshold = temp_threshold
         self.wait_time = wait_time
+        self.channel_p3 = channel_p3
+        self.channel_p4 = channel_p4
+        self.p4_threshold = p4_threshold
+        self.p4_p3_diff_threshold = p4_p3_diff_threshold
         self.bf = BlueFors('bf_fridge',
                            folder_path=folder_path,
                            channel_vacuum_can=1,
@@ -39,13 +46,13 @@ class BlueForsAlarm:
                            channel_50k_plate=1,
                            channel_4k_plate=2,
                            channel_magnet=None,
-                           channel_still=6,
-                           channel_mixing_chamber=5)
+                           channel_still=5,
+                           channel_mixing_chamber=6)
         self.email_list = self.get_email_list()
         self.slack_channel = "fridge"
         self.slacker = Slack_er(self.bf)
 
-    def get_subject(self, pt_off, mc_temp_high, temp):
+    def get_subject(self, pt_off, mc_temp_high, p4_high, p4_p3_diff_high, temp, p3, p4):
         subject = []
         head_string = "🚨[URGENT]🚨"
         separator = ". "
@@ -56,9 +63,18 @@ class BlueForsAlarm:
             subject.append(separator)
         if mc_temp_high:
             subject.append("BlueFors is WARM.")
+            subject.append(separator)
+        if p4_high:
+            subject.append("Gas handling pressure P4 is too high!")
+            subject.append(separator)
+        if p4_p3_diff_high:
+            subject.append("Pressure difference between P4 and P3 is too large!")
+            subject.append(separator)
 
         tail_string = " Current temperature is {} K".format(temp)
         subject.append(tail_string)
+        pressure_string = " (P3 = {} mBar, P4 = {} mBar)".format(p3, p4)
+        subject.append(pressure_string)
 
         subject = "".join(subject)
         return subject
@@ -93,16 +109,23 @@ class BlueForsAlarm:
         while True:
             pulse_tube_status = self.bf.get_pulse_tube_status()
             mc_temp = self.bf.get_temperature(self.mc_channel_id)
+            p3 = self.bf.get_pressure(self.channel_p3)
+            p4 = self.bf.get_pressure(self.channel_p4)
 
             print("Pulse Tube Status: {}".format(pulse_tube_status))
             print("MC Temperature: {} K".format(mc_temp))
+            print("P3: {} mBar".format(p3))
+            print("P4: {} mBar".format(p4))
 
             pulse_tube_off = bool(pulse_tube_status == 0)
             mc_temp_high = bool(mc_temp >= self.temp_threshold)
+            # NaN pressures (e.g. missing log file) compare False, so they never trigger the alarm
+            p4_high = bool(p4 >= self.p4_threshold)
+            p4_p3_diff_high = bool(abs(p4 - p3) >= self.p4_p3_diff_threshold)
 
-            if pulse_tube_off or mc_temp_high: # Triggers if something is wrong w/ fridge
+            if pulse_tube_off or mc_temp_high or p4_high or p4_p3_diff_high: # Triggers if something is wrong w/ fridge
                 # Send out an email
-                subject = self.get_subject(pulse_tube_off, mc_temp_high, mc_temp)
+                subject = self.get_subject(pulse_tube_off, mc_temp_high, p4_high, p4_p3_diff_high, mc_temp, p3, p4)
                 content = self.get_content()
 
                 # Send message to Slack
