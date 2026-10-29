@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===========================================
-Program : LFL_Lab_Maintenance/BlueFors_Alarm.py
+Program : BlueFors_Alarm_System/BlueFors_Alarm.py
 ===========================================
 Summary: Sends out an email when pulse tubes are off
          or when the fridge's temperature is >= 50mK
@@ -42,7 +42,7 @@ class BlueForsAlarm:
                            channel_still=6,
                            channel_mixing_chamber=5)
         self.email_list = self.get_email_list()
-        self.slack_channel = "sneezy-bluefors"
+        self.slack_channel = "fridge"
         self.slacker = Slack_er(self.bf)
 
     def get_subject(self, pt_off, mc_temp_high, temp):
@@ -114,15 +114,15 @@ class BlueForsAlarm:
             time.sleep(self.wait_time)
 
     def alarm_system_deactivated(self):
-        page_link = "https://uscedu-my.sharepoint.com/personal/lflab_usc_edu/_layouts/OneNote.aspx?id=%2Fpersonal%2Flflab_usc_edu%2FDocuments%2FLearning%20Guide&wd=target%28%F0%9F%92%BB%20Software%2F0%20Etc%2FFridge%20Monitor.one%7C3C1D6285-FF93-4F2A-9120-534B5293927C%2FBlueFors%20Alarm%7C134AE989-6DF2-714A-9A23-E187A6CFCAFA%2F%29"
-        self.send_slack_message(f'🔕 BlueFors Alarm is now deactivated!\n\n\nPlease activate it after the issue is resolved. Here is how to do so - {page_link}')
+        page_link = None
+        self.send_slack_message(f'🔕 BlueFors Alarm is now deactivated!\n\n\nPlease activate it after the issue is resolved.')
 
     def signal_handler(self, signum, frame):
         self.alarm_system_deactivated()
         exit(1)
 
 if __name__=='__main__':
-    folder_path = r'C:\Users\lfl\Bluefors logs'
+    folder_path = r'C:\Users\gyeni\Desktop\Bluefors logs'
     alarm = BlueForsAlarm(folder_path)
     alarm.start_alarm_system()
     alarm.alarm_system_deactivated()
