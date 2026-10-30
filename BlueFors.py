@@ -2,7 +2,7 @@
 # Etienne Dumur <etienne.dumur@gmail.com>, september 2020
 
 import os
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -272,3 +272,120 @@ class BlueFors(Instrument):
             return np.nan
             self.log.warn('Cannot parse log file: {}. Returning np.nan instead of the pressure value.'.format(err))
             return np.nan
+
+
+    def _get_last_entry_time(self, file_path: str) -> datetime:
+        """
+        Return the datetime of the last entry of a log file.
+        All BlueFors log files start each line with a date and a time
+        column (e.g. "29-10-26,16:36:41,...").
+
+        Args:
+            file_path (str): Path of the log file.
+
+        Returns:
+            datetime of the last entry, or None if the file cannot be
+            accessed or its last entry cannot be parsed.
+        """
+        try:
+            last_line = None
+            with open(file_path, 'r') as file:
+                for line in file:
+                    if line.strip():
+                        last_line = line
+            if last_line is None:
+                raise IndexError('Log file is empty')
+
+            values = last_line.strip().split(',')
+            timestamp_string = (values[0] + ' ' + values[1]).strip()
+            for fmt in ('%d-%m-%y %H:%M:%S', '%d-%m-%y %H:%M', '%Y-%m-%d %H:%M:%S'):
+                try:
+                    return pd.to_datetime(timestamp_string, format=fmt)
+                except ValueError:
+                    continue
+            raise ValueError('Unrecognized timestamp format: {}'.format(timestamp_string))
+        except (PermissionError, OSError, IndexError, ValueError) as err:
+            self.log.warn('Cannot access log file: {}. Returning None instead of the timestamp.'.format(err))
+            return None
+
+
+    def get_pressure_timestamp(self) -> datetime:
+        """
+        Return the datetime of the last entry of the current day's
+        maxigauge (pressure) log file.
+
+        Returns:
+            datetime of the last entry, or None if unavailable.
+        """
+        folder_name = date.today().strftime("%y-%m-%d")
+        file_path = os.path.join(self.folder_path, folder_name, 'maxigauge '+folder_name+'.log')
+        return self._get_last_entry_time(file_path)
+
+
+    def get_temperature_timestamp(self, channel: int) -> datetime:
+        """
+        Return the datetime of the last entry of the current day's
+        temperature log for the channel.
+
+        Args:
+            channel (int): Channel of the temperature log.
+
+        Returns:
+            datetime of the last entry, or None if unavailable.
+        """
+        folder_name = date.today().strftime("%y-%m-%d")
+        file_path = os.path.join(self.folder_path, folder_name, 'CH'+str(channel)+' T '+folder_name+'.log')
+        return self._get_last_entry_time(file_path)
+
+
+    def get_pulse_tube_status_timestamp(self) -> datetime:
+        """
+        Return the datetime of the last entry of the current day's
+        status log.
+
+        Returns:
+            datetime of the last entry, or None if unavailable.
+        """
+        folder_name = date.today().strftime("%y-%m-%d")
+        file_path = os.path.join(self.folder_path, folder_name, 'Status_'+folder_name+'.log')
+        return self._get_last_entry_time(file_path)
+
+
+    def get_most_recent_temperature(self, channel: int):
+        """
+        Return the last recorded temperature and its timestamp for the
+        channel, using the newest dated log folder that contains the
+        channel's temperature log. Useful when the current day's log is
+        missing, e.g. when the server stops logging temperatures that are
+        outside the sensor range.
+
+        Args:
+            channel (int): Channel of the temperature log.
+
+        Returns:
+            (temperature in K, datetime of the entry), or (None, None) if
+            no temperature log for the channel can be found.
+        """
+        try:
+            folder_names = sorted(os.listdir(self.folder_path), reverse=True)
+        except (PermissionError, OSError) as err:
+            self.log.warn('Cannot access log folder: {}.'.format(err))
+            return None, None
+
+        for folder_name in folder_names:
+            file_path = os.path.join(self.folder_path, folder_name,
+                                     'CH'+str(channel)+' T '+folder_name+'.log')
+            if not os.path.isfile(file_path):
+                continue
+            timestamp = self._get_last_entry_time(file_path)
+            try:
+                df = pd.read_csv(file_path,
+                                 delimiter=',',
+                                 names=['date', 'time', 'y'],
+                                 header=None)
+                value = float(df.iloc[-1]['y'])
+            except (PermissionError, OSError, IndexError, ValueError, TypeError) as err:
+                self.log.warn('Cannot parse log file: {}.'.format(err))
+                return None, None
+            return value, timestamp
+        return None, None
