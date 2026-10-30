@@ -73,14 +73,14 @@ class BlueForsAlarm:
     def get_subject(self, pt_off, mc_temp_high, p4_high, p4_p3_diff_high, temp, p3, p4):
         subject = []
         head_string = "🚨[URGENT]🚨"
-        separator = ". "
+        separator = " "
 
         subject.append(head_string)
         if pt_off:
-            subject.append("BlueFors' Pulse Tubes are OFF")
+            subject.append("BlueFors' Pulse Tubes are OFF!")
             subject.append(separator)
         if mc_temp_high:
-            subject.append("BlueFors is WARM.")
+            subject.append("Mixing chamber is WARM!")
             subject.append(separator)
         if p4_high:
             subject.append("Gas handling pressure P4 is too high!")
@@ -198,7 +198,7 @@ class BlueForsAlarm:
         signal.signal(signal.SIGTERM, self.signal_handler)  # Handle Control+Z
 
         # Send message that the alarm system is activated
-        self.send_slack_message('🔔 BlueFors Alarm is now active!')
+        self.send_slack_message('🔔 BlueFors Alarm is now active and monitoring logs.')
 
         while True:
             pulse_tube_status = self.bf.get_pulse_tube_status()
@@ -238,7 +238,7 @@ class BlueForsAlarm:
 
     def alarm_system_deactivated(self):
         page_link = None
-        self.send_slack_message(f'🔕 BlueFors Alarm is now deactivated!\n\n\nPlease activate it after the issue is resolved.')
+        self.send_slack_message(f'🔕 BlueFors Alarm is now deactivated.')
 
     def signal_handler(self, signum, frame):
         self.alarm_system_deactivated()
